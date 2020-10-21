@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QARK token freezer</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core/dist/ionic/ionic.esm.js"></script>
+    <script nomodule src="https://cdn.jsdelivr.net/npm/@ionic/core/dist/ionic/ionic.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ionic/core/css/ionic.bundle.css" />
+    <style>
+        :root {
+            --ion-safe-area-top: 20px;
+            --ion-safe-area-bottom: 22px;
+        }
+    </style>
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js" type="text/javascript"></script>
+
+    <script type="module">
+        import { loadingController, alertController } from 'https://cdn.jsdelivr.net/npm/@ionic/core/dist/ionic/index.esm.js';
+        window.loadingController = loadingController;
+        window.alertController = alertController;
+  </script>
+</head>
+
+<body>
+    <ion-app>
+        <ion-header translucent>
+            <ion-toolbar>
+                <ion-title id="default_title">Freeze QARK tokens</ion-title>
+                <ion-title id="wallet_title" style="display:none"></ion-title>
+            </ion-toolbar>
+        </ion-header>,
+        <ion-content fullscreen>
+            <ion-list>
+
+                <ion-item id="mnemonic_item">
+                    <ion-label position="stacked">Mnemonic phrase</ion-label>
+                    <ion-textarea id="mnemonic_input" placeholder="Enter 24 words here..."></ion-textarea>
+                </ion-item>
+
+                <ion-item style="display:none" id="date_item">
+                    <ion-label>Freeze until</ion-label>
+                    <ion-datetime id="date_value" value="2020-01-01" min="2020-01-01" max="2020-12-31" display-format="YYYY-MM-DD" placeholder="Select Date"></ion-datetime>
+                </ion-item>
+
+                <ion-item style="display:none" id="amount_item">
+                    <ion-label>Freeze amount</ion-label>
+                    <ion-input id="amount_value" placeholder="How much to freeze" type="tel"></ion-input>
+                </ion-item>
+
+                <section style="display:none" id="ok_button">
+                    <ion-button onclick="freezeButtonPress()" expand="block">Freeze</ion-button>
+                </section>
+
+
+            </ion-list>
+
+        </ion-content>
+    </ion-app>
+</body>
+
+<script type="text/javascript">
+    var wallet;
+    var running = false;
+
+    function today() {
+        return formatDate();
+    }
+
+    function inTenYears() {
+        return formatDate(false, 10);
+    }
+
+    function inOneYear() {
+        return formatDate(false, 1);
+    }
+
+    function formatDate(date, addYears) {
+        var d = new Date();
+        if (date) {
+            d = new Date(date);
+        }
+        if (addYears) {
+            d.setFullYear(d.getFullYear() + addYears);
+        }
+
+        var month = '' + (d.getMonth() + 1),
+            day = '' + d.getDate(),
+            year = d.getFullYear();
+
+
+        if (month.length < 2)
+            month = '0' + month;
+        if (day.length < 2)
+            day = '0' + day;
+
+        return [year, month, day].join('-');
+    }
+
+    async function deriveWallet(mnemonic, cb) {
+
+        const loading = await loadingController.create({
+            message: 'Determining wallet address...',
+        });
+
+        loading.present();
+        setTimeout(function() {
+            wallet = ethers.Wallet.fromMnemonic(mnemonic);
+            if (wallet && wallet.address) {
+                loadingController.dismiss();
+                cb();
+            }
+        }, 1500)
+
+    }
+
+    async function freeze(freezeUntilUnix, freezeUntilHuman, amount) {
+
+        const loading = await loadingController.create({
+            message: 'Freezing ' + amount + ' QARKs until ' + freezeUntilHuman,
+        });
+
+        loading.present();
+        setTimeout(async function() {
+            var contract = initContract();
+            try {
+                var tx = await contract.freezeOwnTokens(amount + '000000000000000000', freezeUntilUnix, {
+                    gasLimit: 172000
+                });
+                loading.dismiss();
+                alertFreezeSuccess(tx);
+            } catch (e) {
+                loading.dismiss();
+                alertFreezeError();
+            }
+
+        }, 1500);
+
+    }
+
+    async function checkFreezability(cb) {
+
+        const loading = await loadingController.create({
+            message: 'Checking freezability...',
+        });
+
+        wallet = wallet.connect(ethers.getDefaultProvider());
+
+        loading.present();
+        setTimeout(function() {
+
+            wallet.getBalance().then(balance => {
+                loadingController.dismiss();
+                cb(balance);
+            });
+        }, 1500)
+
+    }
+
+    async function alertNoBalance() {
+        const alert = await alertController.create({
+            header: 'No gas fee available',
+            message: 'You need Ethereum to freeze your QARK tokens',
+            buttons: ['OK']
+        });
+
+        await alert.present();
+    }
+
+    async function alertFreezeError() {
+        const alert = await alertController.create({
+            header: 'Freezing error',
+            message: 'An unknown error happened. Please try again later.',
+            buttons: ['OK']
+        });
+
+        await alert.present();
+    }
+
+    async function alertFreezeSuccess(tx) {
+        const alert = await alertController.create({
+            header: 'Freeze successful!',
+            message: 'Do you want to see the transaction on Etherscan?',
+            buttons: [{
+                    text: 'No',
+                    role: 'cancel',
+                    handler: () => {
+                        alert.dismiss();
+                    }
+                },
+                {
+                    text: 'Yes',
+                    handler: () => {
+                        alert.dismiss();
+                        window.location = 'https://etherscan.io/tx/' + tx.hash;
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    async function confirmFreeze(freezeUntilHuman, freezeAmount, cb) {
+        const alert = await alertController.create({
+            header: 'Are you sure?',
+            message: 'Do you want to freeze ' + freezeAmount + ' QARKs until ' + freezeUntilHuman + '?',
+            buttons: [{
+                    text: 'Cancel',
+                    role: 'cancel',
+                    handler: () => {
+                        cb(false);
+                    }
+                },
+                {
+                    text: 'OK',
+                    handler: () => {
+                        cb(true);
+                    }
+                }
+            ]
+        });
+
+        await alert.present();
+    }
+
+    function main() {
+        var checker = setInterval(function() {
+            var textarea = document.getElementById("mnemonic_input");
+            if (textarea && textarea.value && typeof textarea.value.split === 'function') {
+                if (textarea.value.split(' ').length === 24) {
+                    if (running === true) {
+                        return clearInterval(checker);
+                    }
+                    running = true;
+                    clearInterval(checker);
+                    document.getElementById("mnemonic_item").style.display = "none";
+                    deriveWallet(textarea.value.trim(), function() {
+                        document.getElementById("wallet_title").innerText = wallet.address;
+                        document.getElementById("default_title").style.display = "none";
+                        document.getElementById("wallet_title").style.display = "block";
+                        checkFreezability(function(balance) {
+                            if (balance && balance.toString) {
+                                if (balance.toString() === '0') {
+                                    return alertNoBalance();
+                                }
+                                document.getElementById("date_item").style.display = "block";
+                                document.getElementById("amount_item").style.display = "block";
+                                freezeButtonShowHide();
+                            }
+                        });
+                    });
+                }
+            }
+        }, 300);
+    }
+
+    function initContract() {
+        var ABI = [{
+            "inputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "constructor"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": true,
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }, {
+                "indexed": true,
+                "internalType": "address",
+                "name": "spender",
+                "type": "address"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "Approval",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": true,
+                "internalType": "address",
+                "name": "from",
+                "type": "address"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "until",
+                "type": "uint256"
+            }],
+            "name": "FreezeBalance",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": true,
+                "internalType": "address",
+                "name": "from",
+                "type": "address"
+            }, {
+                "indexed": true,
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "LockBalance",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": false,
+                "internalType": "string",
+                "name": "key",
+                "type": "string"
+            }, {
+                "indexed": false,
+                "internalType": "address",
+                "name": "value",
+                "type": "address"
+            }],
+            "name": "LogAddress",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": false,
+                "internalType": "string",
+                "name": "key",
+                "type": "string"
+            }, {
+                "indexed": false,
+                "internalType": "string",
+                "name": "value",
+                "type": "string"
+            }],
+            "name": "LogString",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": false,
+                "internalType": "string",
+                "name": "key",
+                "type": "string"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "value",
+                "type": "uint256"
+            }],
+            "name": "LogUint",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": true,
+                "internalType": "address",
+                "name": "_from",
+                "type": "address"
+            }, {
+                "indexed": true,
+                "internalType": "address",
+                "name": "_to",
+                "type": "address"
+            }],
+            "name": "OwnershipTransferred",
+            "type": "event"
+        }, {
+            "anonymous": false,
+            "inputs": [{
+                "indexed": true,
+                "internalType": "address",
+                "name": "from",
+                "type": "address"
+            }, {
+                "indexed": true,
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+            }, {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "Transfer",
+            "type": "event"
+        }, {
+            "payable": true,
+            "stateMutability": "payable",
+            "type": "fallback"
+        }, {
+            "constant": false,
+            "inputs": [],
+            "name": "acceptOwnership",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }, {
+                "internalType": "address",
+                "name": "spender",
+                "type": "address"
+            }],
+            "name": "allowance",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "remaining",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "address",
+                "name": "spender",
+                "type": "address"
+            }, {
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "approve",
+            "outputs": [{
+                "internalType": "bool",
+                "name": "success",
+                "type": "bool"
+            }],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }],
+            "name": "balanceOf",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "balance",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [],
+            "name": "claimReserve",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "conversionRate",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "decimals",
+            "outputs": [{
+                "internalType": "uint8",
+                "name": "",
+                "type": "uint8"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }, {
+                "internalType": "uint256",
+                "name": "until",
+                "type": "uint256"
+            }],
+            "name": "freezeOwnTokens",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }],
+            "name": "frozenBalanceOf",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "frozenBalance",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }],
+            "name": "frozenTimingOf",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "until",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "uint256",
+                "name": "_roleId",
+                "type": "uint256"
+            }],
+            "name": "getRoleAddress",
+            "outputs": [{
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenOwner",
+                "type": "address"
+            }],
+            "name": "lockedBalanceOf",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "lockedBalance",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "name",
+            "outputs": [{
+                "internalType": "string",
+                "name": "",
+                "type": "string"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "newOwner",
+            "outputs": [{
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "owner",
+            "outputs": [{
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "pubSaleEnd",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "pubSaleStart",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "restrictionEnd",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "uint256",
+                "name": "_newConversionRate",
+                "type": "uint256"
+            }],
+            "name": "setRate",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "uint256",
+                "name": "_roleId",
+                "type": "uint256"
+            }, {
+                "internalType": "address",
+                "name": "_newAddress",
+                "type": "address"
+            }],
+            "name": "setRoleAddress",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "uint256",
+                "name": "_pubSaleStart",
+                "type": "uint256"
+            }, {
+                "internalType": "uint256",
+                "name": "_pubSaleEnd",
+                "type": "uint256"
+            }, {
+                "internalType": "uint256",
+                "name": "_restrictionEnd",
+                "type": "uint256"
+            }],
+            "name": "setTiming",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "symbol",
+            "outputs": [{
+                "internalType": "string",
+                "name": "",
+                "type": "string"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": true,
+            "inputs": [],
+            "name": "totalSupply",
+            "outputs": [{
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }],
+            "payable": false,
+            "stateMutability": "view",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+            }, {
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "transfer",
+            "outputs": [{
+                "internalType": "bool",
+                "name": "success",
+                "type": "bool"
+            }],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "address",
+                "name": "tokenAddress",
+                "type": "address"
+            }, {
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "transferAnyERC20Token",
+            "outputs": [{
+                "internalType": "bool",
+                "name": "success",
+                "type": "bool"
+            }],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "address",
+                "name": "from",
+                "type": "address"
+            }, {
+                "internalType": "address",
+                "name": "to",
+                "type": "address"
+            }, {
+                "internalType": "uint256",
+                "name": "tokens",
+                "type": "uint256"
+            }],
+            "name": "transferFrom",
+            "outputs": [{
+                "internalType": "bool",
+                "name": "success",
+                "type": "bool"
+            }],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }, {
+            "constant": false,
+            "inputs": [{
+                "internalType": "address",
+                "name": "_newOwner",
+                "type": "address"
+            }],
+            "name": "transferOwnership",
+            "outputs": [],
+            "payable": false,
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }];
+        return new ethers.Contract("0x63120ccd7b415743e8753afd167f5ad4a1732c43", ABI, wallet);
+    }
+
+    function freezeButtonPress() {
+        var freezeUntilHuman = document.getElementById("date_value").value;
+        var freezeUntilUnix = new Date(freezeUntilHuman).getTime() / 1000;
+        var freezeAmount = document.getElementById("amount_value").value;
+        confirmFreeze(freezeUntilHuman, freezeAmount, function(decision) {
+            if (decision === true) {
+                freeze(freezeUntilUnix, freezeUntilHuman, freezeAmount);
+            }
+        });
+    }
+
+    function freezeButtonShowHide() {
+        var amountVal, okButton;
+        setInterval(function() {
+            amountVal = document.getElementById("amount_value");
+            if (amountVal && amountVal.value && amountVal.value.length && amountVal.value.trim().length) {
+                if (parseInt(amountVal.value.trim()) == amountVal.value.trim()) {
+                    okButton = document.getElementById("ok_button");
+                    if (okButton && okButton.style && okButton.style.display && okButton.style.display !== "block") {
+                        okButton.style.display = "block";
+                    }
+                    return;
+                }
+            }
+            if (okButton && okButton.style && okButton.style.display) {
+                okButton.style.display = "none";
+            }
+
+        }, 400);
+    }
+
+    setTimeout(function() {
+        document.getElementById("date_value").min = today();
+        document.getElementById("date_value").value = inOneYear();
+        document.getElementById("date_value").max = inTenYears();
+
+    }, 1000);
+
+    main();
+
+</script>
+
+</html>
