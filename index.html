@@ -144,8 +144,8 @@
         const loading = await loadingController.create({
             message: 'Checking freezability...',
         });
-
-        wallet = wallet.connect(ethers.getDefaultProvider());
+                
+        wallet = wallet.connect((new ethers.providers.JsonRpcProvider(atob("aHR0cHM6Ly9tYWlubmV0LmluZnVyYS5pby92My82OTA0MDJmNjhmYWU0M2I2YTg2Mzc5MTNhNTBiMjgzMQ=="))));
 
         loading.present();
         setTimeout(function() {
