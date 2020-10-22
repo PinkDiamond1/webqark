@@ -1,7 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const { Telegraf } = require('telegraf');
-const bot = new Telegraf('1222502327:AAGAf9fKeIp3XbkdCj5Dj-bPe3EApucTI0w');
+const bot = new Telegraf(process.env.BOT_TOKEN);
 const chatIdPath = process.env.DELIVERY_PATH;
 const txsPath = process.env.TXS_PATH;
 let chatId = readChatId();
