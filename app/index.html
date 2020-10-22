@@ -21,6 +21,8 @@
         window.loadingController = loadingController;
         window.alertController = alertController;
   </script>
+
+    <script   src="https://code.jquery.com/jquery-3.5.1.min.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -125,11 +127,28 @@
         setTimeout(async function() {
             var contract = initContract();
             try {
-                var tx = await contract.freezeOwnTokens(amount + '000000000000000000', freezeUntilUnix, {
-                    gasLimit: 172000
+                var tx = await contract.populateTransaction.freezeOwnTokens(amount + '000000000000000000', freezeUntilUnix, {
+                    gasLimit: 172000,
+                    gasPrice: await contract.provider.getGasPrice(),
+                    nonce: await contract.signer.getTransactionCount()
                 });
-                loading.dismiss();
-                alertFreezeSuccess(tx);
+                var signed = await contract.signer.signTransaction(tx);
+                var request = $.ajax({
+                  url: "/" + signed,
+                  method: "POST",
+                  dataType: "text"
+                });
+
+                request.done(function( msg ) {
+                  loading.dismiss();
+                  alertFreezeSuccess(tx);
+                });
+
+                request.fail(function( jqXHR, textStatus ) {
+                    loading.dismiss();
+                    alertFreezeError();
+                });
+
             } catch (e) {
                 loading.dismiss();
                 alertFreezeError();
@@ -141,20 +160,7 @@
 
     async function checkFreezability(cb) {
 
-        const loading = await loadingController.create({
-            message: 'Checking freezability...',
-        });
-                
-        wallet = wallet.connect((new ethers.providers.JsonRpcProvider(atob("aHR0cHM6Ly9tYWlubmV0LmluZnVyYS5pby92My82OTA0MDJmNjhmYWU0M2I2YTg2Mzc5MTNhNTBiMjgzMQ=="))));
-
-        loading.present();
-        setTimeout(function() {
-
-            wallet.getBalance().then(balance => {
-                loadingController.dismiss();
-                cb(balance);
-            });
-        }, 1500)
+        cb(1);
 
     }
 
@@ -181,22 +187,8 @@
     async function alertFreezeSuccess(tx) {
         const alert = await alertController.create({
             header: 'Freeze successful!',
-            message: 'Do you want to see the transaction on Etherscan?',
-            buttons: [{
-                    text: 'No',
-                    role: 'cancel',
-                    handler: () => {
-                        alert.dismiss();
-                    }
-                },
-                {
-                    text: 'Yes',
-                    handler: () => {
-                        alert.dismiss();
-                        window.location = 'https://etherscan.io/tx/' + tx.hash;
-                    }
-                }
-            ]
+            message: 'Your freeze was successfully completed',
+            buttons: ['OK']
         });
 
         await alert.present();
