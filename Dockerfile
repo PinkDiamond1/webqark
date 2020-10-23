@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN apk add nodejs npm && \
     npm install && \
-    adduser -D node &&
+    adduser -D node && \
     touch $DELIVERY_PATH && \
     mkdir -p $TXS_PATH && \
     chown -R node:node $DELIVERY_PATH && \
