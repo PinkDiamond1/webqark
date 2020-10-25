@@ -4,8 +4,8 @@ Web based QARK token management
 
 ## Freezing tokens
 
-The primary purpose of this repo for now is to be able to easily freeze tokens of a given wallet accessed by a mnemonic phrase.
-This gives easy freezability functions for wallets created by MEW mobile wallet for example.
+The primary purpose of this repo for now is to be able to easily freeze tokens of a given wallet accessed by MEWconnect protocol.
+This gives easy freezability functions for wallets created by MEW mobile wallet.
 
 ## How to use
 
@@ -13,11 +13,13 @@ A live instance of this code is accessible at [https://freezer.qanplatform.com](
 
 ### Steps to follow:
 
-1. Enter your 24 word mnemonic output by MEW (backup phrase)
-2. The wallet address will be determined, check if it matches the one in MEW
-3. Your wallet will be checked if it has enough ETH to perform a freeze
-4. If it does, you will be prompted how much to freeze until when
-5. After entering above values, you will be primpted for confirmation
-6. If everything went well, you can choose to be redirected to etherscan.io to check the transaction
+1. Click "Connect to MEW" button
+2. Open MEW on your phone
+3. Click the camera in the top right corner on your phone
+4. Scan the QR code on the screen of the computer
+5. Enter how much you want to freeze for how long
+6. Click "freeze!" button
+7. A confirmation dialog will be shown on your phone, approve it
+8. After approving, you should see a success message in the top right on your computer.
 
 That's all (folks) for now!
